@@ -1,5 +1,7 @@
 # Lattice — Local Network Intelligence Dashboard
 
+# YOLO
+
 
 A real-time, self-hosted network monitoring dashboard with a Palantir-style dark UI. Visualizes live device topology, traffic flows, connection feeds, bandwidth timelines, and protocol distributions for your local network.
 
