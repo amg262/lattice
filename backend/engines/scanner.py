@@ -8,8 +8,6 @@ Performs two kinds of scans:
 Results are written directly to the DuckDB devices table via db/queries.py.
 """
 from __future__ import annotations
-import asyncio
-import json
 import logging
 import threading
 import time

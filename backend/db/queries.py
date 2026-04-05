@@ -162,6 +162,61 @@ def get_top_talkers(limit: int = 10, minutes: int = 10) -> list[dict]:
     return [{"ip": r[0], "bytes_out": r[1], "bytes_in": r[2]} for r in rows]
 
 
+# ---------------------------------------------------------------------------
+# Geo cache
+# ---------------------------------------------------------------------------
+
+def upsert_geo(geo: dict) -> None:
+    """Persist a geo record to DuckDB (upsert by IP)."""
+    db.execute("""
+        INSERT INTO geo_cache (ip, lat, lon, city, country, country_code, isp, org, as_name, first_seen)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT (ip) DO UPDATE SET
+            lat          = EXCLUDED.lat,
+            lon          = EXCLUDED.lon,
+            city         = EXCLUDED.city,
+            country      = EXCLUDED.country,
+            country_code = EXCLUDED.country_code,
+            isp          = EXCLUDED.isp,
+            org          = EXCLUDED.org,
+            as_name      = EXCLUDED.as_name
+    """, [
+        geo["ip"], geo["lat"], geo["lon"],
+        geo.get("city", ""), geo.get("country", ""), geo.get("country_code", ""),
+        geo.get("isp", ""), geo.get("org", ""), geo.get("as_name", ""),
+        datetime.now(timezone.utc),
+    ])
+
+
+def get_geo(ip: str) -> dict | None:
+    row = db.fetchone("""
+        SELECT ip, lat, lon, city, country, country_code, isp, org, as_name
+        FROM geo_cache WHERE ip = ?
+    """, [ip])
+    if not row:
+        return None
+    return {
+        "ip": row[0], "lat": row[1], "lon": row[2],
+        "city": row[3], "country": row[4], "country_code": row[5],
+        "isp": row[6], "org": row[7], "as_name": row[8],
+    }
+
+
+def get_all_geo() -> list[dict]:
+    rows = db.fetchall("""
+        SELECT ip, lat, lon, city, country, country_code, isp, org, as_name
+        FROM geo_cache
+    """)
+    return [
+        {
+            "ip": r[0], "lat": r[1], "lon": r[2],
+            "city": r[3], "country": r[4], "country_code": r[5],
+            "isp": r[6], "org": r[7], "as_name": r[8],
+        }
+        for r in rows
+    ]
+
+
 def purge_old_data(retention_days: int) -> None:
     db.execute("""
         DELETE FROM connections

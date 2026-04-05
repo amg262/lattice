@@ -67,6 +67,21 @@ def _init_schema(conn: duckdb.DuckDBPyConnection) -> None:
         ON traffic_stats (ts)
     """)
 
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS geo_cache (
+            ip           VARCHAR PRIMARY KEY,
+            lat          DOUBLE NOT NULL,
+            lon          DOUBLE NOT NULL,
+            city         VARCHAR DEFAULT '',
+            country      VARCHAR DEFAULT '',
+            country_code VARCHAR DEFAULT '',
+            isp          VARCHAR DEFAULT '',
+            org          VARCHAR DEFAULT '',
+            as_name      VARCHAR DEFAULT '',
+            first_seen   TIMESTAMP NOT NULL
+        )
+    """)
+
 
 def execute(sql: str, params: list | None = None):
     """Thread-safe query execution, returns nothing."""

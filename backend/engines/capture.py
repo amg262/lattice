@@ -12,7 +12,6 @@ from __future__ import annotations
 import asyncio
 import collections
 import logging
-import math
 import threading
 from datetime import datetime, timezone
 
@@ -142,6 +141,14 @@ def _packet_callback(pkt) -> None:
 
         with _proto_lock:
             _proto_counts[proto] = _proto_counts.get(proto, 0) + 1
+
+        # Enqueue external IPs for geolocation (import lazily to avoid circular)
+        try:
+            from engines.geoip import enqueue as geo_enqueue
+            geo_enqueue(src_ip)
+            geo_enqueue(dst_ip)
+        except Exception:
+            pass
 
         # Accumulate traffic stats
         with _traffic_lock:

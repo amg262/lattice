@@ -16,8 +16,14 @@ export default defineConfig({
       },
     },
   },
+  resolve: {
+    alias: {
+      // loaders.gl references Node built-ins that don't exist in the browser
+      './child-process-proxy': false as unknown as string,
+    },
+  },
   build: {
-    chunkSizeWarningLimit: 1400,
+    chunkSizeWarningLimit: 2000,
     rollupOptions: {
       output: {
         manualChunks: {

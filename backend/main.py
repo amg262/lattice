@@ -20,8 +20,9 @@ from fastapi.middleware.cors import CORSMiddleware
 import config
 import db.database as database
 import engines.capture as capture
+import engines.geoip as geoip
 import engines.scanner as scanner
-from api import devices, traffic, websocket
+from api import devices, geo, traffic, websocket
 
 # ---------------------------------------------------------------------------
 # Logging
@@ -58,7 +59,8 @@ async def lifespan(app: FastAPI):
     scanner.start()
     capture.start()
 
-    # Start async broadcast loop
+    # Start async tasks
+    geo_task = geoip.start()
     broadcast_task = asyncio.create_task(websocket.broadcast_loop())
 
     yield  # Application runs
@@ -66,6 +68,7 @@ async def lifespan(app: FastAPI):
     # Shutdown
     log.info("Shutting down engines...")
     broadcast_task.cancel()
+    geo_task.cancel()
     scanner.stop()
     capture.stop()
     log.info("Shutdown complete.")
@@ -92,6 +95,7 @@ app.add_middleware(
 
 app.include_router(devices.router)
 app.include_router(traffic.router)
+app.include_router(geo.router)
 app.include_router(websocket.router)
 
 

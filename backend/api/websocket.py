@@ -20,6 +20,7 @@ from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 import config
 import db.queries as q
 import engines.capture as capture
+import engines.geoip as geoip
 import engines.scanner as scanner
 
 log = logging.getLogger("lattice.ws")
@@ -100,6 +101,33 @@ def _build_snapshot() -> dict:
 
     alive_count = sum(1 for d in devices.values() if d.is_alive)
 
+    # Build geo_flows: recent external connections with geo resolved
+    geo_flows = []
+    for conn in recent_conns:
+        src_priv = geoip.is_private_ip(conn.src_ip)
+        dst_priv = geoip.is_private_ip(conn.dst_ip)
+        remote_ip = conn.dst_ip if not dst_priv else (conn.src_ip if not src_priv else None)
+        if not remote_ip:
+            continue
+        geo = geoip.get_geo(remote_ip)
+        if not geo:
+            continue
+        geo_flows.append({
+            "ts": conn.ts.isoformat() if hasattr(conn.ts, "isoformat") else str(conn.ts),
+            "src_ip": conn.src_ip,
+            "dst_ip": conn.dst_ip,
+            "src_port": conn.src_port,
+            "dst_port": conn.dst_port,
+            "protocol": conn.protocol,
+            "bytes": conn.bytes,
+            "remote_ip": remote_ip,
+            **{k: geo[k] for k in ("lat", "lon", "city", "country", "country_code", "isp", "org")},
+        })
+        if len(geo_flows) >= 30:
+            break
+
+    my_loc = geoip.get_my_location()
+
     return {
         "type": "snapshot",
         "ts": datetime.now(timezone.utc).isoformat(),
@@ -112,4 +140,6 @@ def _build_snapshot() -> dict:
         "connections": [c.model_dump() for c in recent_conns],
         "top_talkers": top_talkers,
         "protocol_distribution": protocol_distribution,
+        "geo_flows": geo_flows,
+        "my_location": my_loc,
     }

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useCallback } from 'react'
+import { useEffect, useRef } from 'react'
 import { Network, DataSet } from 'vis-network/standalone'
 import type { Options } from 'vis-network'
 import { useNetworkStore } from '../stores/networkStore'

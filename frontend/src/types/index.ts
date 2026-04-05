@@ -48,6 +48,36 @@ export interface Stats {
   top_protocol: string
 }
 
+export interface GeoLocation {
+  ip: string
+  lat: number
+  lon: number
+  city: string
+  country: string
+  country_code: string
+  isp: string
+  org: string
+  as_name?: string
+}
+
+export interface GeoFlow {
+  ts: string
+  src_ip: string
+  dst_ip: string
+  src_port: number | null
+  dst_port: number | null
+  protocol: string
+  bytes: number
+  remote_ip: string
+  lat: number
+  lon: number
+  city: string
+  country: string
+  country_code: string
+  isp: string
+  org: string
+}
+
 export interface WSSnapshot {
   type: string
   ts: string
@@ -56,4 +86,6 @@ export interface WSSnapshot {
   connections: Connection[]
   top_talkers: Talker[]
   protocol_distribution: ProtocolEntry[]
+  geo_flows: GeoFlow[]
+  my_location: GeoLocation | null
 }
