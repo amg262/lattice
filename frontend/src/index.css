@@ -1,0 +1,94 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  * {
+    box-sizing: border-box;
+  }
+
+  html, body, #root {
+    height: 100%;
+    margin: 0;
+    padding: 0;
+    overflow: hidden;
+  }
+
+  body {
+    background-color: #0d1117;
+    color: #e2e8f0;
+    font-family: 'Inter', system-ui, sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  ::-webkit-scrollbar {
+    width: 4px;
+    height: 4px;
+  }
+  ::-webkit-scrollbar-track {
+    background: #161b22;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: #2d3748;
+    border-radius: 2px;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: #3b82f6;
+  }
+}
+
+@layer components {
+  .panel {
+    @apply bg-surface-1 border border-border rounded-lg overflow-hidden;
+  }
+
+  .panel-header {
+    @apply px-3 py-2 border-b border-border flex items-center justify-between;
+  }
+
+  .panel-title {
+    @apply text-xs font-semibold uppercase tracking-widest text-muted;
+  }
+
+  .badge {
+    @apply inline-flex items-center px-1.5 py-0.5 rounded text-xs font-mono;
+  }
+
+  .badge-blue {
+    @apply badge bg-accent/20 text-accent-glow;
+  }
+
+  .badge-green {
+    @apply badge bg-success/20 text-success;
+  }
+
+  .badge-red {
+    @apply badge bg-danger/20 text-danger;
+  }
+
+  .badge-yellow {
+    @apply badge bg-warning/20 text-warning;
+  }
+
+  .badge-muted {
+    @apply badge bg-surface-3 text-muted;
+  }
+
+  .dot-live {
+    @apply w-2 h-2 rounded-full bg-success animate-pulse-slow;
+  }
+
+  .dot-dead {
+    @apply w-2 h-2 rounded-full bg-muted;
+  }
+
+  .mono {
+    @apply font-mono text-xs;
+  }
+}
+
+/* vis-network canvas container */
+.vis-network {
+  border: none !important;
+  outline: none !important;
+}
