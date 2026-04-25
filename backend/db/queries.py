@@ -217,12 +217,171 @@ def get_all_geo() -> list[dict]:
     ]
 
 
+# ---------------------------------------------------------------------------
+# DNS log
+# ---------------------------------------------------------------------------
+
+def insert_dns_query(ts, src_ip: str, domain: str, query_type: str = "DNS") -> None:
+    db.execute("""
+        INSERT INTO dns_log (ts, src_ip, domain, query_type)
+        VALUES (?, ?, ?, ?)
+    """, [ts, src_ip, domain, query_type])
+
+
+def get_dns_log(ip: str | None = None, hours: int = 1, limit: int = 200) -> list[dict]:
+    if ip:
+        rows = db.fetchall(f"""
+            SELECT ts, src_ip, domain, query_type
+            FROM dns_log
+            WHERE src_ip = ?
+              AND ts >= NOW() - INTERVAL '{hours} hours'
+            ORDER BY ts DESC
+            LIMIT {limit}
+        """, [ip])
+    else:
+        rows = db.fetchall(f"""
+            SELECT ts, src_ip, domain, query_type
+            FROM dns_log
+            WHERE ts >= NOW() - INTERVAL '{hours} hours'
+            ORDER BY ts DESC
+            LIMIT {limit}
+        """)
+    return [{"ts": str(r[0]), "src_ip": r[1], "domain": r[2], "query_type": r[3]} for r in rows]
+
+
+def get_top_domains(ip: str | None = None, hours: int = 24, limit: int = 20) -> list[dict]:
+    if ip:
+        rows = db.fetchall(f"""
+            SELECT domain, query_type, COUNT(*) as cnt
+            FROM dns_log
+            WHERE src_ip = ?
+              AND ts >= NOW() - INTERVAL '{hours} hours'
+            GROUP BY domain, query_type
+            ORDER BY cnt DESC
+            LIMIT {limit}
+        """, [ip])
+    else:
+        rows = db.fetchall(f"""
+            SELECT domain, query_type, COUNT(*) as cnt
+            FROM dns_log
+            WHERE ts >= NOW() - INTERVAL '{hours} hours'
+            GROUP BY domain, query_type
+            ORDER BY cnt DESC
+            LIMIT {limit}
+        """)
+    return [{"domain": r[0], "query_type": r[1], "count": r[2]} for r in rows]
+
+
+def get_dns_counts_by_device(hours: int = 1) -> dict[str, int]:
+    """Return {ip: query_count} for the given time window."""
+    rows = db.fetchall(f"""
+        SELECT src_ip, COUNT(*) as cnt
+        FROM dns_log
+        WHERE ts >= NOW() - INTERVAL '{hours} hours'
+        GROUP BY src_ip
+    """)
+    return {r[0]: r[1] for r in rows}
+
+
+# ---------------------------------------------------------------------------
+# Events / Alerts
+# ---------------------------------------------------------------------------
+
+def insert_event(ts, severity: str, device_ip: str, event_type: str, message: str) -> None:
+    db.execute("""
+        INSERT INTO events (ts, severity, device_ip, event_type, message)
+        VALUES (?, ?, ?, ?, ?)
+    """, [ts, severity, device_ip, event_type, message])
+
+
+def get_events(hours: int = 24, severity: str | None = None, limit: int = 100) -> list[dict]:
+    if severity:
+        rows = db.fetchall(f"""
+            SELECT ts, severity, device_ip, event_type, message
+            FROM events
+            WHERE severity = ?
+              AND ts >= NOW() - INTERVAL '{hours} hours'
+            ORDER BY ts DESC
+            LIMIT {limit}
+        """, [severity])
+    else:
+        rows = db.fetchall(f"""
+            SELECT ts, severity, device_ip, event_type, message
+            FROM events
+            WHERE ts >= NOW() - INTERVAL '{hours} hours'
+            ORDER BY ts DESC
+            LIMIT {limit}
+        """)
+    return [
+        {"ts": str(r[0]), "severity": r[1], "device_ip": r[2], "event_type": r[3], "message": r[4]}
+        for r in rows
+    ]
+
+
+# ---------------------------------------------------------------------------
+# Traffic usage
+# ---------------------------------------------------------------------------
+
+def get_traffic_usage(ip: str | None = None, period: str = "day") -> list[dict]:
+    """Aggregate traffic by IP for a given period (day/week/month)."""
+    period_map = {"day": "1 days", "week": "7 days", "month": "30 days"}
+    interval = period_map.get(period, "1 days")
+    if ip:
+        rows = db.fetchall(f"""
+            SELECT DATE_TRUNC('day', ts) as day,
+                   SUM(bytes_out) as bytes_out,
+                   SUM(bytes_in) as bytes_in
+            FROM traffic_stats
+            WHERE ip = ?
+              AND ts >= NOW() - INTERVAL '{interval}'
+            GROUP BY day
+            ORDER BY day
+        """, [ip])
+        return [{"day": str(r[0]), "bytes_out": r[1] or 0, "bytes_in": r[2] or 0} for r in rows]
+    else:
+        rows = db.fetchall(f"""
+            SELECT ip,
+                   SUM(bytes_out) as bytes_out,
+                   SUM(bytes_in) as bytes_in
+            FROM traffic_stats
+            WHERE ts >= NOW() - INTERVAL '{interval}'
+            GROUP BY ip
+            ORDER BY bytes_out DESC
+        """)
+        return [{"ip": r[0], "bytes_out": r[1] or 0, "bytes_in": r[2] or 0} for r in rows]
+
+
+# ---------------------------------------------------------------------------
+# Device activity (merged connections + dns_log)
+# ---------------------------------------------------------------------------
+
+def get_device_activity(ip: str, hours: int = 24, limit: int = 100) -> list[dict]:
+    """Return merged timeline of connections and DNS queries for a device."""
+    rows = db.fetchall(f"""
+        SELECT ts, 'dns' as kind, domain as detail, query_type as proto, '' as dst_ip
+        FROM dns_log
+        WHERE src_ip = ?
+          AND ts >= NOW() - INTERVAL '{hours} hours'
+        UNION ALL
+        SELECT ts, 'conn' as kind, dst_ip as detail, protocol as proto, dst_ip
+        FROM connections
+        WHERE src_ip = ?
+          AND ts >= NOW() - INTERVAL '{hours} hours'
+        ORDER BY ts DESC
+        LIMIT {limit}
+    """, [ip, ip])
+    return [
+        {"ts": str(r[0]), "kind": r[1], "detail": r[2], "proto": r[3], "dst_ip": r[4]}
+        for r in rows
+    ]
+
+
+# ---------------------------------------------------------------------------
+# Purge
+# ---------------------------------------------------------------------------
+
 def purge_old_data(retention_days: int) -> None:
-    db.execute("""
-        DELETE FROM connections
-        WHERE ts < NOW() - INTERVAL '? days'
-    """.replace("? days", f"{retention_days} days"))
-    db.execute("""
-        DELETE FROM traffic_stats
-        WHERE ts < NOW() - INTERVAL '? days'
-    """.replace("? days", f"{retention_days} days"))
+    db.execute(f"DELETE FROM connections WHERE ts < NOW() - INTERVAL '{retention_days} days'")
+    db.execute(f"DELETE FROM traffic_stats WHERE ts < NOW() - INTERVAL '{retention_days} days'")
+    db.execute(f"DELETE FROM dns_log WHERE ts < NOW() - INTERVAL '{retention_days} days'")
+    db.execute(f"DELETE FROM events WHERE ts < NOW() - INTERVAL '{retention_days * 4} days'")

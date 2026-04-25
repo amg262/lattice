@@ -146,8 +146,20 @@ def _scanner_loop(stop_event: threading.Event) -> None:
                     first_seen=now, last_seen=now, is_alive=True,
                 )
                 log.info("New device discovered: %s (%s) [%s]", ip, mac, vendor)
+                try:
+                    from engines.alerts import on_new_device
+                    on_new_device(ip, mac, vendor, hostname)
+                except Exception:
+                    pass
             else:
+                was_dead = not existing.is_alive
                 dev = existing.model_copy(update={"last_seen": now, "is_alive": True, "mac": mac})
+                if was_dead:
+                    try:
+                        from engines.alerts import on_device_online
+                        on_device_online(ip, existing.vendor, existing.hostname)
+                    except Exception:
+                        pass
 
             with _devices_lock:
                 _devices[ip] = dev
@@ -199,6 +211,26 @@ _thread: threading.Thread | None = None
 def start() -> None:
     global _thread
     _stop_event.clear()
+
+    # Pre-populate the in-memory cache from DuckDB so previously discovered
+    # devices are visible in the UI immediately after a restart, including those
+    # that are currently offline/sleeping (phones, smart TVs, etc.).
+    # The ARP sweep will update is_alive correctly on each cycle.
+    try:
+        persisted = q.get_all_devices()
+        with _devices_lock:
+            for device in persisted:
+                _devices[device.ip] = device
+        log.info("Scanner: pre-loaded %d device(s) from DB", len(persisted))
+        # Seed alerts engine so known devices don't trigger new-device alerts
+        try:
+            from engines.alerts import seed_known_devices
+            seed_known_devices([d.ip for d in persisted])
+        except Exception:
+            pass
+    except Exception as exc:
+        log.warning("Scanner: could not pre-load devices from DB: %s", exc)
+
     _thread = threading.Thread(target=_scanner_loop, args=(_stop_event,), daemon=True, name="scanner")
     _thread.start()
 

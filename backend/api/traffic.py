@@ -59,3 +59,17 @@ def overall_stats():
         "total_bytes_captured": total_bytes,
         "top_protocol": max(proto_counts, key=proto_counts.get) if proto_counts else "—",
     }
+
+
+@router.get("/usage")
+def traffic_usage(
+    ip: str | None = Query(None, description="Device IP (omit for all devices)"),
+    period: str = Query("day", description="Aggregation period: day | week | month"),
+):
+    """Return traffic usage aggregated by period.
+    With ip: returns daily breakdown for that device.
+    Without ip: returns per-device totals for the period.
+    """
+    if period not in ("day", "week", "month"):
+        period = "day"
+    return q.get_traffic_usage(ip=ip, period=period)

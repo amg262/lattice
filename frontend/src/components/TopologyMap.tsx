@@ -106,6 +106,7 @@ export default function TopologyMap() {
   const nodesRef = useRef(new DataSet<any>([]))
   const edgesRef = useRef(new DataSet<any>([]))
   const edgeTimers = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map())
+  const initialFitDoneRef = useRef(false)
 
   const devices = useNetworkStore(s => s.devices)
   const connections = useNetworkStore(s => s.connections)
@@ -149,7 +150,12 @@ export default function TopologyMap() {
       if (!incoming.has(id)) nodes.remove(id)
     }
 
-    // Upsert nodes
+    // Upsert nodes — new nodes get spread around a circle so physics starts from
+    // a reasonable position instead of a collapsed origin cluster.
+    const newDevices = devices.filter(d => !existing.has(d.ip))
+    const newCount = newDevices.length
+    let newIdx = 0
+
     for (const d of devices) {
       const nodeData = {
         id: d.ip,
@@ -169,8 +175,21 @@ export default function TopologyMap() {
       if (existing.has(d.ip)) {
         nodes.update(nodeData)
       } else {
-        nodes.add(nodeData)
+        const angle = (newIdx / Math.max(newCount, 1)) * 2 * Math.PI
+        const radius = 220 + (newIdx % 3) * 60
+        nodes.add({ ...nodeData, x: Math.cos(angle) * radius, y: Math.sin(angle) * radius })
+        newIdx++
       }
+    }
+
+    // After the first batch of devices loads, fit the viewport once the physics
+    // simulation settles so all nodes are visible without manual zoom/pan.
+    if (newDevices.length > 0 && networkRef.current && !initialFitDoneRef.current) {
+      initialFitDoneRef.current = true
+      const net = networkRef.current
+      net.once('stabilized', () => {
+        net.fit({ animation: { duration: 600, easingFunction: 'easeInOutQuad' } })
+      })
     }
   }, [devices])
 

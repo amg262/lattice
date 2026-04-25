@@ -1,6 +1,6 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useNetworkStore } from '../stores/networkStore'
-import type { Device } from '../types'
+import type { Device, ActivityEntry, UsagePoint } from '../types'
 
 function timeAgo(ts: string): string {
   const diff = (Date.now() - new Date(ts).getTime()) / 1000
@@ -10,33 +10,104 @@ function timeAgo(ts: string): string {
   return `${Math.floor(diff / 86400)}d ago`
 }
 
-function DeviceRow({ device, selected, onSelect }: {
-  device: Device
-  selected: boolean
-  onSelect: () => void
-}) {
-  const name = device.hostname || device.vendor || device.ip
+function formatBytes(b: number): string {
+  if (b >= 1_073_741_824) return `${(b / 1_073_741_824).toFixed(1)} GB`
+  if (b >= 1_048_576) return `${(b / 1_048_576).toFixed(1)} MB`
+  if (b >= 1_024) return `${(b / 1_024).toFixed(0)} KB`
+  return `${b} B`
+}
+
+function formatTime(ts: string): string {
+  return new Date(ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })
+}
+
+// ---------------------------------------------------------------------------
+// Activity timeline entry
+// ---------------------------------------------------------------------------
+const ACTIVITY_COLORS: Record<string, string> = {
+  DNS: '#f59e0b',
+  SNI: '#22c55e',
+  HTTP: '#3b82f6',
+  TLS: '#22c55e',
+  SSH: '#a78bfa',
+  TCP: '#60a5fa',
+  UDP: '#34d399',
+}
+
+function ActivityRow({ entry }: { entry: ActivityEntry }) {
+  const color = ACTIVITY_COLORS[entry.proto] ?? '#94a3b8'
+  const isConn = entry.kind === 'conn'
   return (
-    <button
-      onClick={onSelect}
-      className={`w-full text-left px-3 py-2 transition-colors rounded-sm group ${
-        selected
-          ? 'bg-accent/20 border-l-2 border-accent'
-          : 'border-l-2 border-transparent hover:bg-surface-2 hover:border-surface-4'
-      }`}
-    >
-      <div className="flex items-center gap-2">
-        <span className={device.is_alive ? 'dot-live' : 'dot-dead'} />
-        <span className="flex-1 min-w-0 text-xs font-mono text-slate-200 truncate">{name}</span>
-        {device.open_ports.length > 0 && (
-          <span className="flex-shrink-0 text-xs text-muted font-mono">
-            {device.open_ports.length}p
-          </span>
-        )}
+    <div className="flex items-start gap-2 py-1 border-b border-border/30 text-xs font-mono">
+      <span
+        className="flex-shrink-0 px-1 rounded leading-4 mt-0.5"
+        style={{ background: `${color}20`, color, border: `1px solid ${color}30` }}
+      >
+        {entry.proto}
+      </span>
+      <div className="flex-1 min-w-0">
+        <div className="text-slate-300 truncate" title={entry.detail}>
+          {isConn ? `→ ${entry.detail}` : entry.detail}
+        </div>
+        <div className="text-muted">{formatTime(entry.ts)}</div>
       </div>
-      <div className="ml-4 text-xs font-mono text-muted truncate">{device.ip}</div>
-      {selected && (
-        <div className="mt-2 space-y-1 border-t border-border pt-2">
+    </div>
+  )
+}
+
+// ---------------------------------------------------------------------------
+// Expanded device detail
+// ---------------------------------------------------------------------------
+function DeviceDetail({ device }: { device: Device }) {
+  const [activity, setActivity] = useState<ActivityEntry[]>([])
+  const [usage, setUsage] = useState<UsagePoint | null>(null)
+  const [activeTab, setActiveTab] = useState<'info' | 'activity'>('info')
+
+  useEffect(() => {
+    // Fetch today's usage
+    fetch(`/api/traffic/usage?ip=${device.ip}&period=day`)
+      .then(r => r.json())
+      .then((rows: UsagePoint[]) => {
+        if (rows.length > 0) {
+          const totals = rows.reduce(
+            (acc, r) => ({ bytes_out: acc.bytes_out + r.bytes_out, bytes_in: acc.bytes_in + r.bytes_in }),
+            { bytes_out: 0, bytes_in: 0 }
+          )
+          setUsage(totals)
+        }
+      })
+      .catch(() => {})
+  }, [device.ip])
+
+  useEffect(() => {
+    if (activeTab !== 'activity') return
+    fetch(`/api/devices/${device.ip}/activity?hours=24&limit=50`)
+      .then(r => r.json())
+      .then(setActivity)
+      .catch(() => {})
+  }, [device.ip, activeTab])
+
+  return (
+    <div className="mt-2 border-t border-border pt-2">
+      {/* Tabs */}
+      <div className="flex gap-1 mb-2">
+        {(['info', 'activity'] as const).map(tab => (
+          <button
+            key={tab}
+            onClick={() => setActiveTab(tab)}
+            className={`text-xs font-mono px-2 py-0.5 rounded transition-colors ${
+              activeTab === tab
+                ? 'bg-accent/20 text-accent'
+                : 'text-muted hover:text-slate-300'
+            }`}
+          >
+            {tab.toUpperCase()}
+          </button>
+        ))}
+      </div>
+
+      {activeTab === 'info' && (
+        <div className="space-y-1">
           <DetailRow label="MAC" value={device.mac} />
           <DetailRow label="Vendor" value={device.vendor || '—'} />
           {device.hostname && <DetailRow label="Host" value={device.hostname} />}
@@ -52,9 +123,34 @@ function DeviceRow({ device, selected, onSelect }: {
           )}
           <DetailRow label="Last seen" value={timeAgo(device.last_seen)} />
           <DetailRow label="First seen" value={timeAgo(device.first_seen)} />
+          {usage && (
+            <div className="mt-2 pt-2 border-t border-border/50">
+              <div className="text-xs text-muted mb-1">Today's usage</div>
+              <div className="flex gap-3 text-xs font-mono">
+                <span>
+                  <span className="text-muted">↑ </span>
+                  <span className="text-slate-300">{formatBytes(usage.bytes_out)}</span>
+                </span>
+                <span>
+                  <span className="text-muted">↓ </span>
+                  <span className="text-slate-300">{formatBytes(usage.bytes_in)}</span>
+                </span>
+              </div>
+            </div>
+          )}
         </div>
       )}
-    </button>
+
+      {activeTab === 'activity' && (
+        <div className="space-y-0 max-h-48 overflow-y-auto">
+          {activity.length === 0 ? (
+            <div className="text-xs text-muted text-center py-4">No activity in last 24h</div>
+          ) : (
+            activity.map((e, i) => <ActivityRow key={`${e.ts}-${e.detail}-${i}`} entry={e} />)
+          )}
+        </div>
+      )}
+    </div>
   )
 }
 
@@ -67,11 +163,63 @@ function DetailRow({ label, value }: { label: string; value: string }) {
   )
 }
 
+// ---------------------------------------------------------------------------
+// Device row
+// ---------------------------------------------------------------------------
+function DeviceRow({ device, selected, onSelect, dnsCount }: {
+  device: Device
+  selected: boolean
+  onSelect: () => void
+  dnsCount: number
+}) {
+  const name = device.hostname || device.vendor || device.ip
+  return (
+    <button
+      onClick={onSelect}
+      className={`w-full text-left px-3 py-2 transition-colors rounded-sm group ${
+        selected
+          ? 'bg-accent/20 border-l-2 border-accent'
+          : 'border-l-2 border-transparent hover:bg-surface-2 hover:border-surface-4'
+      }`}
+    >
+      <div className="flex items-center gap-2">
+        <span className={device.is_alive ? 'dot-live' : 'dot-dead'} />
+        <span className="flex-1 min-w-0 text-xs font-mono text-slate-200 truncate">{name}</span>
+        <div className="flex items-center gap-1 flex-shrink-0">
+          {dnsCount > 0 && (
+            <span className="text-xs font-mono px-1 rounded"
+              style={{ background: '#f59e0b18', color: '#f59e0b', border: '1px solid #f59e0b30' }}>
+              {dnsCount}
+            </span>
+          )}
+          {device.open_ports.length > 0 && (
+            <span className="text-xs text-muted font-mono">
+              {device.open_ports.length}p
+            </span>
+          )}
+        </div>
+      </div>
+      <div className="ml-4 text-xs font-mono text-muted truncate">{device.ip}</div>
+      {selected && <DeviceDetail device={device} />}
+    </button>
+  )
+}
+
+// ---------------------------------------------------------------------------
+// Main DevicePanel
+// ---------------------------------------------------------------------------
 export default function DevicePanel() {
   const devices = useNetworkStore(s => s.devices)
+  const dnsLog = useNetworkStore(s => s.dnsLog)
   const selectedIp = useNetworkStore(s => s.selectedIp)
   const selectDevice = useNetworkStore(s => s.selectDevice)
   const [filter, setFilter] = useState('')
+
+  // Compute DNS counts per IP from in-memory log
+  const dnsCounts = dnsLog.reduce((acc, e) => {
+    acc[e.src_ip] = (acc[e.src_ip] ?? 0) + 1
+    return acc
+  }, {} as Record<string, number>)
 
   const alive = devices.filter(d => d.is_alive)
   const offline = devices.filter(d => !d.is_alive)
@@ -126,6 +274,7 @@ export default function DevicePanel() {
                 device={d}
                 selected={selectedIp === d.ip}
                 onSelect={() => selectDevice(selectedIp === d.ip ? null : d.ip)}
+                dnsCount={dnsCounts[d.ip] ?? 0}
               />
             ))}
             {filteredOffline.length > 0 && (
@@ -139,6 +288,7 @@ export default function DevicePanel() {
                     device={d}
                     selected={selectedIp === d.ip}
                     onSelect={() => selectDevice(selectedIp === d.ip ? null : d.ip)}
+                    dnsCount={dnsCounts[d.ip] ?? 0}
                   />
                 ))}
               </>

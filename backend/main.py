@@ -19,10 +19,11 @@ from fastapi.middleware.cors import CORSMiddleware
 
 import config
 import db.database as database
+import db.queries as queries
 import engines.capture as capture
 import engines.geoip as geoip
 import engines.scanner as scanner
-from api import devices, geo, traffic, websocket
+from api import devices, dns, events, geo, traffic, websocket
 
 # ---------------------------------------------------------------------------
 # Logging
@@ -62,6 +63,7 @@ async def lifespan(app: FastAPI):
     # Start async tasks
     geo_task = geoip.start()
     broadcast_task = asyncio.create_task(websocket.broadcast_loop())
+    purge_task = asyncio.create_task(_daily_purge())
 
     yield  # Application runs
 
@@ -69,9 +71,21 @@ async def lifespan(app: FastAPI):
     log.info("Shutting down engines...")
     broadcast_task.cancel()
     geo_task.cancel()
+    purge_task.cancel()
     scanner.stop()
     capture.stop()
     log.info("Shutdown complete.")
+
+
+async def _daily_purge() -> None:
+    """Run purge_old_data once every 24 hours."""
+    while True:
+        await asyncio.sleep(86_400)
+        try:
+            queries.purge_old_data(config.RETENTION_DAYS)
+            log.info("Purged data older than %d days", config.RETENTION_DAYS)
+        except Exception as exc:
+            log.warning("Data purge failed: %s", exc)
 
 
 # ---------------------------------------------------------------------------
@@ -96,6 +110,8 @@ app.add_middleware(
 app.include_router(devices.router)
 app.include_router(traffic.router)
 app.include_router(geo.router)
+app.include_router(dns.router)
+app.include_router(events.router)
 app.include_router(websocket.router)
 
 

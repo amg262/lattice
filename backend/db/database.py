@@ -82,6 +82,40 @@ def _init_schema(conn: duckdb.DuckDBPyConnection) -> None:
         )
     """)
 
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS dns_log (
+            ts          TIMESTAMP NOT NULL,
+            src_ip      VARCHAR NOT NULL,
+            domain      VARCHAR NOT NULL,
+            query_type  VARCHAR DEFAULT 'DNS'
+        )
+    """)
+
+    conn.execute("""
+        CREATE INDEX IF NOT EXISTS idx_dns_log_src_ts
+        ON dns_log (src_ip, ts)
+    """)
+
+    conn.execute("""
+        CREATE INDEX IF NOT EXISTS idx_dns_log_domain
+        ON dns_log (domain, ts)
+    """)
+
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS events (
+            ts          TIMESTAMP NOT NULL,
+            severity    VARCHAR NOT NULL DEFAULT 'info',
+            device_ip   VARCHAR DEFAULT '',
+            event_type  VARCHAR NOT NULL,
+            message     VARCHAR NOT NULL
+        )
+    """)
+
+    conn.execute("""
+        CREATE INDEX IF NOT EXISTS idx_events_ts
+        ON events (ts)
+    """)
+
 
 def execute(sql: str, params: list | None = None):
     """Thread-safe query execution, returns nothing."""

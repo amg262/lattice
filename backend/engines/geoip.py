@@ -16,6 +16,7 @@ from __future__ import annotations
 import asyncio
 import ipaddress
 import logging
+import queue as stdlib_queue
 import threading
 from datetime import datetime, timezone
 
@@ -59,8 +60,12 @@ GeoRecord = dict  # {"lat", "lon", "city", "country", "country_code", "isp", "or
 
 _cache: dict[str, GeoRecord] = {}
 
-# IPs waiting to be resolved
-_pending_queue: asyncio.Queue[str] = asyncio.Queue()
+# IPs waiting to be resolved.
+# Must be a stdlib queue (thread-safe) because enqueue() is called from Scapy's
+# sync capture thread while _resolver_loop() runs on the asyncio event loop.
+# asyncio.Queue is NOT thread-safe and silently drops put_nowait() calls from
+# non-async threads, which would leave the geo cache permanently empty.
+_pending_queue: stdlib_queue.SimpleQueue[str] = stdlib_queue.SimpleQueue()
 
 # IPs already in cache or pending — avoid duplicate enqueues.
 # Uses a threading.Lock because enqueue() is called from sync capture threads.
@@ -72,17 +77,18 @@ _my_location: GeoRecord | None = None
 
 
 def enqueue(ip: str) -> None:
-    """Non-blocking — safe to call from sync threads in capture.py."""
+    """Non-blocking — safe to call from sync threads in capture.py.
+
+    SimpleQueue.put() is always non-blocking (unbounded queue) and is
+    guaranteed thread-safe, unlike asyncio.Queue.
+    """
     if is_private_ip(ip):
         return
     with _seen_lock:
         if ip in _seen:
             return
         _seen.add(ip)
-    try:
-        _pending_queue.put_nowait(ip)
-    except asyncio.QueueFull:
-        pass
+    _pending_queue.put(ip)
 
 
 def get_geo(ip: str) -> GeoRecord | None:
@@ -141,14 +147,14 @@ async def _resolver_loop() -> None:
     while True:
         await asyncio.sleep(RESOLVE_INTERVAL)
 
-        # Drain up to BATCH_SIZE IPs from the queue
+        # Drain up to BATCH_SIZE IPs from the thread-safe stdlib queue
         batch: list[str] = []
         while len(batch) < BATCH_SIZE:
             try:
                 ip = _pending_queue.get_nowait()
                 if ip not in _cache:  # skip already-resolved
                     batch.append(ip)
-            except asyncio.QueueEmpty:
+            except stdlib_queue.Empty:
                 break
 
         if not batch:

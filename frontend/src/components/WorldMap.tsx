@@ -156,6 +156,16 @@ export default function WorldMap() {
   const startTimeRef = useRef(Date.now())
   const hasFlownToHomeRef = useRef(false)
 
+  // Defer DeckGL mount by one animation frame so the container has its CSS
+  // dimensions computed before deck.gl/luma.gl creates the WebGL context.
+  // Without this, the ResizeObserver fires while device=undefined, causing:
+  //   "Cannot read properties of undefined (reading 'maxTextureDimension2D')"
+  const [deckReady, setDeckReady] = useState(false)
+  useEffect(() => {
+    const rafId = requestAnimationFrame(() => setDeckReady(true))
+    return () => cancelAnimationFrame(rafId)
+  }, [])
+
   // Throttled animation loop (10fps is plenty for opacity fades)
   useEffect(() => {
     const id = setInterval(() => {
@@ -327,15 +337,17 @@ export default function WorldMap() {
 
   return (
     <div className="relative w-full h-full bg-surface">
-      <DeckGL
-        viewState={viewState}
-        controller={{ dragPan: true, dragRotate: true, scrollZoom: true, touchZoom: true }}
-        onViewStateChange={({ viewState: vs }: any) => setViewState(vs)}
-        layers={layers as any}
-        getCursor={({ isDragging, isHovering }: any) =>
-          isDragging ? 'grabbing' : isHovering ? 'pointer' : 'grab'
-        }
-      />
+      {deckReady && (
+        <DeckGL
+          viewState={viewState}
+          controller={{ dragPan: true, dragRotate: true, scrollZoom: true, touchZoom: true }}
+          onViewStateChange={({ viewState: vs }: any) => setViewState(vs)}
+          layers={layers as any}
+          getCursor={({ isDragging, isHovering }: any) =>
+            isDragging ? 'grabbing' : isHovering ? 'pointer' : 'grab'
+          }
+        />
+      )}
 
       <MapTooltip info={tooltip} />
 

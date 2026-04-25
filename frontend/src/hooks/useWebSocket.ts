@@ -2,7 +2,15 @@ import { useEffect, useRef } from 'react'
 import { useNetworkStore } from '../stores/networkStore'
 import type { WSSnapshot } from '../types'
 
-const WS_URL = 'ws://localhost:8000/ws'
+function getWsUrl(): string {
+  const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
+  const host = window.location.hostname
+  // In dev, Vite proxies /ws → backend on :8000; in prod, same host/port
+  const port = import.meta.env.DEV ? '8000' : window.location.port
+  const portStr = port ? `:${port}` : ''
+  return `${proto}//${host}${portStr}/ws`
+}
+
 const RECONNECT_DELAY_MS = 3000
 
 export function useWebSocket() {
@@ -27,7 +35,7 @@ export function useWebSocket() {
     if (!mountedRef.current) return
 
     try {
-      const ws = new WebSocket(WS_URL)
+      const ws = new WebSocket(getWsUrl())
       wsRef.current = ws
 
       ws.onopen = () => {

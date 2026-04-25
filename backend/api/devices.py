@@ -50,6 +50,17 @@ def get_device(ip: str):
     return dev
 
 
+@router.get("/{ip}/activity")
+def device_activity(
+    ip: str,
+    hours: int = 24,
+    limit: int = 100,
+):
+    """Return merged timeline of connections and DNS queries for a device."""
+    import db.queries as q2
+    return q2.get_device_activity(ip=ip, hours=hours, limit=limit)
+
+
 @router.post("/{ip}/rescan")
 def rescan_device(ip: str):
     """Trigger an immediate nmap rescan of a device (async, returns immediately)."""

@@ -39,6 +39,21 @@ class TrafficPoint(BaseModel):
     packets_in: int
 
 
+class DnsEntry(BaseModel):
+    ts: datetime
+    src_ip: str
+    domain: str
+    query_type: str = "DNS"  # "DNS" | "SNI" | "HTTP"
+
+
+class NetworkEvent(BaseModel):
+    ts: datetime
+    severity: str = "info"  # "info" | "warning" | "danger"
+    device_ip: str = ""
+    event_type: str
+    message: str
+
+
 class WSMessage(BaseModel):
     type: str  # "snapshot" | "device_added" | "device_updated"
     devices: list[Device] = []
@@ -46,4 +61,6 @@ class WSMessage(BaseModel):
     traffic: list[TrafficPoint] = []
     top_talkers: list[dict] = []
     protocol_counts: dict[str, int] = {}
+    dns_live: list[dict] = []
+    events: list[dict] = []
     stats: dict = {}

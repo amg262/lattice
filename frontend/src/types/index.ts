@@ -78,6 +78,42 @@ export interface GeoFlow {
   org: string
 }
 
+export interface DnsEntry {
+  ts: string
+  src_ip: string
+  domain: string
+  query_type: 'DNS' | 'SNI' | 'HTTP' | string
+}
+
+export interface NetworkEvent {
+  ts: string
+  severity: 'info' | 'warning' | 'danger' | string
+  device_ip: string
+  event_type: string
+  message: string
+}
+
+export interface TopDomain {
+  domain: string
+  query_type: string
+  count: number
+}
+
+export interface UsagePoint {
+  day?: string
+  ip?: string
+  bytes_out: number
+  bytes_in: number
+}
+
+export interface ActivityEntry {
+  ts: string
+  kind: 'dns' | 'conn' | string
+  detail: string
+  proto: string
+  dst_ip: string
+}
+
 export interface WSSnapshot {
   type: string
   ts: string
@@ -88,4 +124,6 @@ export interface WSSnapshot {
   protocol_distribution: ProtocolEntry[]
   geo_flows: GeoFlow[]
   my_location: GeoLocation | null
+  dns_live: DnsEntry[]
+  events: NetworkEvent[]
 }

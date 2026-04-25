@@ -19,6 +19,7 @@ from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
 import config
 import db.queries as q
+import engines.alerts as alerts
 import engines.capture as capture
 import engines.geoip as geoip
 import engines.scanner as scanner
@@ -127,6 +128,8 @@ def _build_snapshot() -> dict:
             break
 
     my_loc = geoip.get_my_location()
+    dns_live = capture.get_recent_dns(limit=30)
+    recent_events = alerts.get_recent_events(limit=15)
 
     return {
         "type": "snapshot",
@@ -142,4 +145,6 @@ def _build_snapshot() -> dict:
         "protocol_distribution": protocol_distribution,
         "geo_flows": geo_flows,
         "my_location": my_loc,
+        "dns_live": dns_live,
+        "events": recent_events,
     }
